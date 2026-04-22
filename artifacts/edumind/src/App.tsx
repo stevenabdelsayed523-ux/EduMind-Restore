@@ -1,5 +1,16 @@
-import { ClerkProvider, SignInButton, SignUpButton, Show, UserButton } from "@clerk/react";
-import { Brain, Zap, FileText, Trophy, Calendar, Bookmark, Sparkles, ArrowRight } from "lucide-react";
+import { useState } from "react";
+import { ClerkProvider, SignInButton, SignUpButton, Show, useUser } from "@clerk/react";
+import {
+  Brain,
+  Zap,
+  FileText,
+  Trophy,
+  Calendar,
+  Bookmark,
+  Sparkles,
+  ArrowRight,
+} from "lucide-react";
+import Dashboard from "./Dashboard";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL as string | undefined;
@@ -58,7 +69,7 @@ const clerkAppearance = {
   },
 };
 
-function Landing() {
+function Landing({ onOpenDashboard }: { onOpenDashboard: () => void }) {
   return (
     <div className="min-h-screen bg-[#0a0d14] text-[#e8ecf8] font-sans relative overflow-x-hidden">
       <div
@@ -99,13 +110,13 @@ function Landing() {
               </SignUpButton>
             </Show>
             <Show when="signed-in">
-              <a
-                href="#dashboard"
-                className="px-4 py-2 text-sm text-[#a8b0c8] hover:text-white transition rounded-lg"
+              <button
+                onClick={onOpenDashboard}
+                className="px-4 py-2 text-sm font-medium rounded-lg text-white transition hover:opacity-90"
+                style={{ background: "linear-gradient(135deg,#4a84f5,#6366f1)", boxShadow: "0 2px 12px rgba(74,132,245,.3)" }}
               >
-                Dashboard
-              </a>
-              <UserButton afterSignOutUrl={import.meta.env.BASE_URL} />
+                Open dashboard
+              </button>
             </Show>
           </div>
         </nav>
@@ -144,14 +155,14 @@ function Landing() {
               </SignInButton>
             </Show>
             <Show when="signed-in">
-              <a
-                href="#dashboard"
+              <button
+                onClick={onOpenDashboard}
                 className="group inline-flex items-center gap-2 px-6 py-3.5 rounded-xl text-white font-medium text-sm transition hover:translate-y-[-1px]"
                 style={{ background: "linear-gradient(135deg,#4a84f5,#6366f1)", boxShadow: "0 4px 24px rgba(74,132,245,.35)" }}
               >
                 Open dashboard
                 <ArrowRight className="w-4 h-4 transition group-hover:translate-x-0.5" />
-              </a>
+              </button>
             </Show>
           </div>
 
@@ -167,7 +178,7 @@ function Landing() {
           </div>
         </section>
 
-        <section id="dashboard" className="max-w-6xl mx-auto px-6 pb-24 pt-10">
+        <section className="max-w-6xl mx-auto px-6 pb-24 pt-10">
           <div className="text-center mb-14">
             <h2 className="font-serif text-3xl md:text-4xl tracking-tight mb-3">
               Everything you need to ace your studies
@@ -201,6 +212,17 @@ function Landing() {
   );
 }
 
+function AppRouter() {
+  const { isSignedIn, isLoaded } = useUser();
+  const [showDashboard, setShowDashboard] = useState(true);
+
+  if (!isLoaded) return null;
+  if (isSignedIn && showDashboard) {
+    return <Dashboard onExit={() => setShowDashboard(false)} />;
+  }
+  return <Landing onOpenDashboard={() => setShowDashboard(true)} />;
+}
+
 function App() {
   if (!clerkPubKey) {
     return (
@@ -211,7 +233,7 @@ function App() {
   }
   return (
     <ClerkProvider publishableKey={clerkPubKey} proxyUrl={clerkProxyUrl} appearance={clerkAppearance}>
-      <Landing />
+      <AppRouter />
     </ClerkProvider>
   );
 }

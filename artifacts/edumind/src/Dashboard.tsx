@@ -1,0 +1,735 @@
+import { useEffect, useMemo, useState } from "react";
+import { UserButton, useUser } from "@clerk/react";
+import {
+  Brain,
+  Zap,
+  FileText,
+  Trophy,
+  Calendar,
+  Bookmark,
+  Plus,
+  Trash2,
+  Check,
+  RotateCcw,
+  Send,
+  Flame,
+  Target,
+  Clock,
+  Home,
+} from "lucide-react";
+
+type ViewKey =
+  | "overview"
+  | "ai"
+  | "test"
+  | "notes"
+  | "flashcards"
+  | "plan"
+  | "stats";
+
+const NAV: { key: ViewKey; label: string; icon: typeof Brain }[] = [
+  { key: "overview", label: "Overview", icon: Home },
+  { key: "ai", label: "AI Helper", icon: Brain },
+  { key: "test", label: "Test Mode", icon: Zap },
+  { key: "notes", label: "Smart Notes", icon: FileText },
+  { key: "flashcards", label: "Flashcards", icon: Bookmark },
+  { key: "plan", label: "Study Plan", icon: Calendar },
+  { key: "stats", label: "Progress", icon: Trophy },
+];
+
+function useLocal<T>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? (JSON.parse(raw) as T) : initial;
+    } catch {
+      return initial;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      /* ignore */
+    }
+  }, [key, value]);
+  return [value, setValue] as const;
+}
+
+function Card({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/* ---------------- AI Helper ---------------- */
+type ChatMsg = { role: "user" | "assistant"; content: string };
+function AIHelper() {
+  const [messages, setMessages] = useLocal<ChatMsg[]>("edumind:chat", []);
+  const [input, setInput] = useState("");
+
+  const send = () => {
+    const q = input.trim();
+    if (!q) return;
+    const reply = generateReply(q);
+    setMessages([
+      ...messages,
+      { role: "user", content: q },
+      { role: "assistant", content: reply },
+    ]);
+    setInput("");
+  };
+
+  return (
+    <div className="flex flex-col h-[70vh]">
+      <Card className="flex-1 overflow-y-auto space-y-3">
+        {messages.length === 0 && (
+          <p className="text-[#8892b0] text-sm">
+            Ask me anything about your studies — try “explain photosynthesis”
+            or “summarise World War 1 causes”.
+          </p>
+        )}
+        {messages.map((m, i) => (
+          <div
+            key={i}
+            className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+              m.role === "user"
+                ? "ml-auto bg-gradient-to-r from-[#4a84f5] to-[#6366f1] text-white"
+                : "mr-auto bg-white/[0.05] border border-white/[0.08]"
+            }`}
+          >
+            {m.content}
+          </div>
+        ))}
+      </Card>
+      <div className="flex gap-2 mt-3">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && send()}
+          placeholder="Ask a study question…"
+          className="flex-1 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder:text-[#5a6480] focus:outline-none focus:border-[#4a84f5]"
+        />
+        <button
+          onClick={send}
+          className="px-5 py-3 rounded-xl text-white font-medium text-sm bg-gradient-to-r from-[#4a84f5] to-[#6366f1] hover:opacity-90 inline-flex items-center gap-2"
+        >
+          <Send className="w-4 h-4" /> Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function generateReply(q: string): string {
+  const ql = q.toLowerCase();
+  if (ql.includes("photosynthesis"))
+    return "Photosynthesis is how plants convert sunlight, water, and CO₂ into glucose and oxygen. The reaction happens in chloroplasts and is summarised by: 6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂.";
+  if (ql.includes("pythagor"))
+    return "The Pythagorean theorem: in a right-angled triangle, a² + b² = c², where c is the hypotenuse.";
+  if (ql.match(/world war (1|i)\b/))
+    return "Main causes of WWI: militarism, alliances, imperialism, nationalism (MAIN), and the trigger was the assassination of Archduke Franz Ferdinand in June 1914.";
+  if (ql.includes("derivative"))
+    return "A derivative measures the instantaneous rate of change of a function. For f(x)=xⁿ, f′(x)=n·xⁿ⁻¹. The derivative of sin(x) is cos(x).";
+  return `Great question. Here's a starting point on "${q}":\n\n• Break the topic into 3 key ideas.\n• Write a one-sentence definition for each.\n• Find one example and one counter-example.\n• Quiz yourself in 24 hours to lock it in.`;
+}
+
+/* ---------------- Test Mode ---------------- */
+const QUIZ = [
+  {
+    q: "What is the chemical symbol for gold?",
+    options: ["Go", "Au", "Gd", "Ag"],
+    answer: 1,
+  },
+  {
+    q: "Which planet is known as the Red Planet?",
+    options: ["Venus", "Jupiter", "Mars", "Mercury"],
+    answer: 2,
+  },
+  {
+    q: "Who wrote 'Romeo and Juliet'?",
+    options: ["Dickens", "Shakespeare", "Austen", "Hemingway"],
+    answer: 1,
+  },
+  {
+    q: "What is 12 × 12?",
+    options: ["124", "144", "132", "164"],
+    answer: 1,
+  },
+  {
+    q: "What is the powerhouse of the cell?",
+    options: ["Nucleus", "Ribosome", "Mitochondria", "Golgi"],
+    answer: 2,
+  },
+];
+
+function TestMode() {
+  const [i, setI] = useState(0);
+  const [picked, setPicked] = useState<number | null>(null);
+  const [score, setScore] = useState(0);
+  const [done, setDone] = useState(false);
+
+  const item = QUIZ[i];
+
+  const choose = (idx: number) => {
+    if (picked !== null) return;
+    setPicked(idx);
+    if (idx === item.answer) setScore((s) => s + 1);
+  };
+  const next = () => {
+    if (i + 1 >= QUIZ.length) {
+      setDone(true);
+      const stats = JSON.parse(localStorage.getItem("edumind:stats") || "{}");
+      stats.tests = (stats.tests || 0) + 1;
+      stats.correct = (stats.correct || 0) + score + (picked === item.answer ? 1 : 0);
+      stats.total = (stats.total || 0) + QUIZ.length;
+      localStorage.setItem("edumind:stats", JSON.stringify(stats));
+    } else {
+      setI(i + 1);
+      setPicked(null);
+    }
+  };
+  const reset = () => {
+    setI(0);
+    setPicked(null);
+    setScore(0);
+    setDone(false);
+  };
+
+  if (done)
+    return (
+      <Card>
+        <h3 className="font-serif text-3xl mb-2">Quiz complete!</h3>
+        <p className="text-[#8892b0] mb-6">
+          You scored {score} / {QUIZ.length}.
+        </p>
+        <button
+          onClick={reset}
+          className="px-5 py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] inline-flex items-center gap-2"
+        >
+          <RotateCcw className="w-4 h-4" /> Try again
+        </button>
+      </Card>
+    );
+
+  return (
+    <Card>
+      <div className="flex justify-between text-xs text-[#8892b0] mb-4">
+        <span>
+          Question {i + 1} of {QUIZ.length}
+        </span>
+        <span>Score: {score}</span>
+      </div>
+      <h3 className="text-lg font-semibold mb-5">{item.q}</h3>
+      <div className="grid gap-2">
+        {item.options.map((o, idx) => {
+          const isPicked = picked === idx;
+          const isAnswer = item.answer === idx;
+          let tone = "border-white/10 bg-white/[0.03] hover:border-white/20";
+          if (picked !== null && isAnswer)
+            tone = "border-emerald-500/50 bg-emerald-500/10";
+          else if (isPicked && !isAnswer)
+            tone = "border-rose-500/50 bg-rose-500/10";
+          return (
+            <button
+              key={idx}
+              onClick={() => choose(idx)}
+              disabled={picked !== null}
+              className={`text-left px-4 py-3 rounded-xl border transition ${tone}`}
+            >
+              {o}
+            </button>
+          );
+        })}
+      </div>
+      {picked !== null && (
+        <button
+          onClick={next}
+          className="mt-5 px-5 py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1]"
+        >
+          {i + 1 >= QUIZ.length ? "Finish" : "Next →"}
+        </button>
+      )}
+    </Card>
+  );
+}
+
+/* ---------------- Smart Notes ---------------- */
+type Note = { id: string; title: string; body: string; updatedAt: number };
+function Notes() {
+  const [notes, setNotes] = useLocal<Note[]>("edumind:notes", []);
+  const [activeId, setActiveId] = useState<string | null>(notes[0]?.id ?? null);
+  const active = notes.find((n) => n.id === activeId) || null;
+
+  const add = () => {
+    const id = crypto.randomUUID();
+    setNotes([{ id, title: "Untitled", body: "", updatedAt: Date.now() }, ...notes]);
+    setActiveId(id);
+  };
+  const update = (patch: Partial<Note>) =>
+    active &&
+    setNotes(
+      notes.map((n) =>
+        n.id === active.id ? { ...n, ...patch, updatedAt: Date.now() } : n,
+      ),
+    );
+  const remove = (id: string) => {
+    const next = notes.filter((n) => n.id !== id);
+    setNotes(next);
+    if (activeId === id) setActiveId(next[0]?.id ?? null);
+  };
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4 h-[70vh]">
+      <Card className="overflow-y-auto">
+        <button
+          onClick={add}
+          className="w-full mb-3 px-3 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] text-white inline-flex items-center justify-center gap-2"
+        >
+          <Plus className="w-4 h-4" /> New note
+        </button>
+        {notes.length === 0 && (
+          <p className="text-xs text-[#5a6480]">No notes yet.</p>
+        )}
+        <ul className="space-y-1">
+          {notes.map((n) => (
+            <li key={n.id}>
+              <button
+                onClick={() => setActiveId(n.id)}
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
+                  n.id === activeId
+                    ? "bg-white/[0.08] text-white"
+                    : "text-[#a8b0c8] hover:bg-white/[0.04]"
+                }`}
+              >
+                <div className="truncate">{n.title || "Untitled"}</div>
+                <div className="text-[10px] text-[#5a6480]">
+                  {new Date(n.updatedAt).toLocaleDateString()}
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Card>
+      <Card>
+        {active ? (
+          <div className="flex flex-col h-full">
+            <div className="flex items-center gap-2 mb-3">
+              <input
+                value={active.title}
+                onChange={(e) => update({ title: e.target.value })}
+                className="flex-1 bg-transparent text-xl font-semibold text-white focus:outline-none"
+                placeholder="Note title"
+              />
+              <button
+                onClick={() => remove(active.id)}
+                className="p-2 rounded-lg text-[#8892b0] hover:text-rose-400 hover:bg-white/[0.04]"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+            <textarea
+              value={active.body}
+              onChange={(e) => update({ body: e.target.value })}
+              placeholder="Start writing…"
+              className="flex-1 w-full bg-transparent text-sm text-[#e8ecf8] placeholder:text-[#5a6480] focus:outline-none resize-none leading-relaxed"
+            />
+          </div>
+        ) : (
+          <div className="h-full flex items-center justify-center text-[#8892b0] text-sm">
+            Create a note to get started.
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ---------------- Flashcards ---------------- */
+type Card_ = { id: string; front: string; back: string };
+function Flashcards() {
+  const [cards, setCards] = useLocal<Card_[]>("edumind:cards", []);
+  const [front, setFront] = useState("");
+  const [back, setBack] = useState("");
+  const [reviewIdx, setReviewIdx] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+
+  const add = () => {
+    if (!front.trim() || !back.trim()) return;
+    setCards([{ id: crypto.randomUUID(), front, back }, ...cards]);
+    setFront("");
+    setBack("");
+  };
+  const remove = (id: string) => setCards(cards.filter((c) => c.id !== id));
+
+  const current = cards[reviewIdx % Math.max(cards.length, 1)];
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <Card>
+        <h3 className="font-semibold mb-4">Add a card</h3>
+        <input
+          value={front}
+          onChange={(e) => setFront(e.target.value)}
+          placeholder="Front (question)"
+          className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder:text-[#5a6480] focus:outline-none focus:border-[#4a84f5] mb-3"
+        />
+        <textarea
+          value={back}
+          onChange={(e) => setBack(e.target.value)}
+          placeholder="Back (answer)"
+          rows={3}
+          className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder:text-[#5a6480] focus:outline-none focus:border-[#4a84f5] mb-3 resize-none"
+        />
+        <button
+          onClick={add}
+          className="px-5 py-2.5 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] inline-flex items-center gap-2"
+        >
+          <Plus className="w-4 h-4" /> Add card
+        </button>
+
+        {cards.length > 0 && (
+          <ul className="mt-6 space-y-2 max-h-[260px] overflow-y-auto">
+            {cards.map((c) => (
+              <li
+                key={c.id}
+                className="flex items-center justify-between px-3 py-2 rounded-lg border border-white/[0.08] bg-white/[0.02] text-sm"
+              >
+                <span className="truncate text-[#a8b0c8]">{c.front}</span>
+                <button
+                  onClick={() => remove(c.id)}
+                  className="p-1 text-[#5a6480] hover:text-rose-400"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card>
+        <h3 className="font-semibold mb-4">Review</h3>
+        {cards.length === 0 ? (
+          <p className="text-sm text-[#8892b0]">
+            Add a card to start reviewing.
+          </p>
+        ) : (
+          <>
+            <div
+              onClick={() => setFlipped((f) => !f)}
+              className="cursor-pointer min-h-[220px] rounded-2xl border border-white/[0.08] bg-white/[0.04] flex items-center justify-center text-center px-6 py-8 mb-4 hover:border-white/[0.15]"
+            >
+              <p className="text-lg font-medium">
+                {flipped ? current.back : current.front}
+              </p>
+            </div>
+            <div className="flex justify-between text-xs text-[#5a6480] mb-3">
+              <span>
+                Card {(reviewIdx % cards.length) + 1} of {cards.length}
+              </span>
+              <span>{flipped ? "Answer" : "Question"} — tap to flip</span>
+            </div>
+            <button
+              onClick={() => {
+                setReviewIdx(reviewIdx + 1);
+                setFlipped(false);
+              }}
+              className="w-full px-5 py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1]"
+            >
+              Next card
+            </button>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ---------------- Study Plan ---------------- */
+type Task = { id: string; title: string; due: string; done: boolean };
+function StudyPlan() {
+  const [tasks, setTasks] = useLocal<Task[]>("edumind:plan", []);
+  const [title, setTitle] = useState("");
+  const [due, setDue] = useState("");
+
+  const add = () => {
+    if (!title.trim()) return;
+    setTasks([
+      { id: crypto.randomUUID(), title, due, done: false },
+      ...tasks,
+    ]);
+    setTitle("");
+    setDue("");
+  };
+  const toggle = (id: string) =>
+    setTasks(tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+  const remove = (id: string) => setTasks(tasks.filter((t) => t.id !== id));
+
+  return (
+    <Card>
+      <h3 className="font-semibold mb-4">Study tasks</h3>
+      <div className="flex flex-col sm:flex-row gap-2 mb-5">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="e.g. Revise quadratic equations"
+          className="flex-1 px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder:text-[#5a6480] focus:outline-none focus:border-[#4a84f5]"
+        />
+        <input
+          type="date"
+          value={due}
+          onChange={(e) => setDue(e.target.value)}
+          className="px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white focus:outline-none focus:border-[#4a84f5]"
+        />
+        <button
+          onClick={add}
+          className="px-5 py-2.5 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] inline-flex items-center gap-2 justify-center"
+        >
+          <Plus className="w-4 h-4" /> Add
+        </button>
+      </div>
+      {tasks.length === 0 ? (
+        <p className="text-sm text-[#8892b0]">No tasks yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {tasks.map((t) => (
+            <li
+              key={t.id}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.08] bg-white/[0.02]"
+            >
+              <button
+                onClick={() => toggle(t.id)}
+                className={`w-5 h-5 rounded-md border flex items-center justify-center ${
+                  t.done
+                    ? "bg-emerald-500 border-emerald-500"
+                    : "border-white/20"
+                }`}
+              >
+                {t.done && <Check className="w-3.5 h-3.5 text-white" />}
+              </button>
+              <div className="flex-1">
+                <div
+                  className={`text-sm ${
+                    t.done ? "line-through text-[#5a6480]" : "text-white"
+                  }`}
+                >
+                  {t.title}
+                </div>
+                {t.due && (
+                  <div className="text-[11px] text-[#5a6480]">
+                    Due {new Date(t.due).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => remove(t.id)}
+                className="p-1 text-[#5a6480] hover:text-rose-400"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/* ---------------- Progress ---------------- */
+function Stats() {
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => setRefresh((r) => r + 1), 1500);
+    return () => clearInterval(i);
+  }, []);
+
+  const data = useMemo(() => {
+    const stats = JSON.parse(localStorage.getItem("edumind:stats") || "{}");
+    const notes = JSON.parse(localStorage.getItem("edumind:notes") || "[]");
+    const cards = JSON.parse(localStorage.getItem("edumind:cards") || "[]");
+    const plan = JSON.parse(localStorage.getItem("edumind:plan") || "[]");
+    const completed = (plan as Task[]).filter((t) => t.done).length;
+    const acc = stats.total ? Math.round((stats.correct / stats.total) * 100) : 0;
+    return {
+      tests: stats.tests || 0,
+      acc,
+      notes: notes.length,
+      cards: cards.length,
+      completed,
+      planTotal: plan.length,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      _r: refresh,
+    };
+  }, [refresh]);
+
+  const tiles = [
+    { icon: Zap, label: "Quizzes taken", value: data.tests },
+    { icon: Target, label: "Accuracy", value: `${data.acc}%` },
+    { icon: FileText, label: "Notes", value: data.notes },
+    { icon: Bookmark, label: "Flashcards", value: data.cards },
+    {
+      icon: Check,
+      label: "Tasks done",
+      value: `${data.completed}/${data.planTotal}`,
+    },
+    { icon: Flame, label: "Streak", value: "1 day" },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      {tiles.map((t) => (
+        <Card key={t.label}>
+          <div className="w-10 h-10 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center mb-4">
+            <t.icon className="w-5 h-5 text-[#7ba8ff]" />
+          </div>
+          <div className="text-2xl font-semibold">{t.value}</div>
+          <div className="text-xs text-[#8892b0] mt-1">{t.label}</div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- Overview ---------------- */
+function Overview({ go }: { go: (k: ViewKey) => void }) {
+  const { user } = useUser();
+  const tiles = NAV.filter((n) => n.key !== "overview");
+  return (
+    <div>
+      <div className="mb-8">
+        <h2 className="font-serif text-4xl tracking-tight">
+          Welcome back
+          {user?.firstName ? `, ${user.firstName}` : ""} 👋
+        </h2>
+        <p className="text-[#8892b0] mt-2">
+          Pick a tool below to keep your study going.
+        </p>
+      </div>
+      <Stats />
+      <h3 className="font-serif text-2xl mt-12 mb-4">Tools</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {tiles.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => go(key)}
+            className="text-left rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 hover:border-white/[0.15] hover:bg-white/[0.05] transition"
+          >
+            <div className="w-10 h-10 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center mb-4">
+              <Icon className="w-5 h-5 text-[#7ba8ff]" />
+            </div>
+            <div className="font-semibold">{label}</div>
+            <div className="text-xs text-[#8892b0] mt-1">Open →</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Shell ---------------- */
+export default function Dashboard({ onExit }: { onExit: () => void }) {
+  const [view, setView] = useState<ViewKey>("overview");
+
+  const Body = () => {
+    switch (view) {
+      case "overview":
+        return <Overview go={setView} />;
+      case "ai":
+        return <AIHelper />;
+      case "test":
+        return <TestMode />;
+      case "notes":
+        return <Notes />;
+      case "flashcards":
+        return <Flashcards />;
+      case "plan":
+        return <StudyPlan />;
+      case "stats":
+        return <Stats />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0a0d14] text-[#e8ecf8] font-sans">
+      <div
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(74,132,245,0.10) 0%, transparent 60%)",
+        }}
+      />
+      <div className="relative z-10 grid grid-cols-1 md:grid-cols-[240px_1fr] min-h-screen">
+        <aside className="border-r border-white/5 px-4 py-6 md:sticky md:top-0 md:h-screen">
+          <button
+            onClick={onExit}
+            className="flex items-center gap-3 mb-8 px-2"
+          >
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center"
+              style={{
+                background: "linear-gradient(135deg,#4a84f5,#6366f1)",
+                boxShadow: "0 0 16px rgba(74,132,245,0.35)",
+              }}
+            >
+              <Brain className="w-4 h-4 text-white" strokeWidth={2.4} />
+            </div>
+            <span className="font-serif text-xl">
+              Edu<span className="italic text-[#7ba8ff]">Mind</span>
+            </span>
+          </button>
+          <nav className="space-y-1">
+            {NAV.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setView(key)}
+                className={`w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center gap-3 transition ${
+                  view === key
+                    ? "bg-white/[0.08] text-white"
+                    : "text-[#a8b0c8] hover:bg-white/[0.04] hover:text-white"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
+            ))}
+          </nav>
+          <div className="mt-8 pt-6 border-t border-white/5 px-2 flex items-center gap-3">
+            <UserButton />
+            <div className="text-xs text-[#8892b0]">Account</div>
+          </div>
+        </aside>
+
+        <main className="px-6 md:px-10 py-8">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2 text-xs text-[#8892b0]">
+              <Clock className="w-3.5 h-3.5" />
+              {new Date().toLocaleDateString(undefined, {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+              })}
+            </div>
+            <button
+              onClick={onExit}
+              className="text-xs text-[#8892b0] hover:text-white"
+            >
+              ← Back to home
+            </button>
+          </div>
+          <Body />
+        </main>
+      </div>
+    </div>
+  );
+}
