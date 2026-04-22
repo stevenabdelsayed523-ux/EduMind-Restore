@@ -163,40 +163,117 @@ function AIHelper() {
 }
 
 /* ---------------- Test Mode ---------------- */
-const QUIZ = [
+type QuizItem = { q: string; options: string[]; answer: number };
+type QuizSet = { id: string; title: string; subject: string; emoji: string; questions: QuizItem[] };
+
+const QUIZZES: QuizSet[] = [
   {
-    q: "What is the chemical symbol for gold?",
-    options: ["Go", "Au", "Gd", "Ag"],
-    answer: 1,
+    id: "general",
+    title: "General Knowledge",
+    subject: "Mixed",
+    emoji: "🧠",
+    questions: [
+      { q: "What is the chemical symbol for gold?", options: ["Go", "Au", "Gd", "Ag"], answer: 1 },
+      { q: "Which planet is known as the Red Planet?", options: ["Venus", "Jupiter", "Mars", "Mercury"], answer: 2 },
+      { q: "Who wrote 'Romeo and Juliet'?", options: ["Dickens", "Shakespeare", "Austen", "Hemingway"], answer: 1 },
+      { q: "What is 12 × 12?", options: ["124", "144", "132", "164"], answer: 1 },
+      { q: "What is the powerhouse of the cell?", options: ["Nucleus", "Ribosome", "Mitochondria", "Golgi"], answer: 2 },
+    ],
   },
   {
-    q: "Which planet is known as the Red Planet?",
-    options: ["Venus", "Jupiter", "Mars", "Mercury"],
-    answer: 2,
+    id: "math",
+    title: "Math Basics",
+    subject: "Mathematics",
+    emoji: "➗",
+    questions: [
+      { q: "What is 15% of 200?", options: ["20", "25", "30", "35"], answer: 2 },
+      { q: "Solve: 7x = 49", options: ["6", "7", "8", "9"], answer: 1 },
+      { q: "Area of a circle with radius 3? (use π≈3.14)", options: ["18.84", "28.26", "9.42", "31.4"], answer: 1 },
+      { q: "What is the square root of 144?", options: ["10", "11", "12", "14"], answer: 2 },
+      { q: "Derivative of x²?", options: ["x", "2x", "x²/2", "2"], answer: 1 },
+    ],
   },
   {
-    q: "Who wrote 'Romeo and Juliet'?",
-    options: ["Dickens", "Shakespeare", "Austen", "Hemingway"],
-    answer: 1,
+    id: "science",
+    title: "Science Essentials",
+    subject: "Science",
+    emoji: "🔬",
+    questions: [
+      { q: "Water's chemical formula?", options: ["HO", "H₂O", "OH₂", "H₂O₂"], answer: 1 },
+      { q: "Speed of light is approximately?", options: ["3×10⁵ m/s", "3×10⁸ m/s", "3×10⁶ m/s", "3×10¹⁰ m/s"], answer: 1 },
+      { q: "Which gas do plants absorb for photosynthesis?", options: ["Oxygen", "Nitrogen", "Carbon dioxide", "Hydrogen"], answer: 2 },
+      { q: "How many bones in the adult human body?", options: ["186", "206", "226", "246"], answer: 1 },
+      { q: "What force keeps planets in orbit?", options: ["Magnetism", "Friction", "Gravity", "Tension"], answer: 2 },
+    ],
   },
   {
-    q: "What is 12 × 12?",
-    options: ["124", "144", "132", "164"],
-    answer: 1,
+    id: "history",
+    title: "World History",
+    subject: "History",
+    emoji: "📜",
+    questions: [
+      { q: "Year World War 2 ended?", options: ["1943", "1944", "1945", "1946"], answer: 2 },
+      { q: "Who was the first US President?", options: ["Jefferson", "Lincoln", "Washington", "Adams"], answer: 2 },
+      { q: "The Great Wall is in which country?", options: ["Japan", "India", "China", "Korea"], answer: 2 },
+      { q: "Which empire built the Colosseum?", options: ["Greek", "Roman", "Ottoman", "Persian"], answer: 1 },
+      { q: "The French Revolution began in?", options: ["1689", "1789", "1799", "1815"], answer: 1 },
+    ],
   },
   {
-    q: "What is the powerhouse of the cell?",
-    options: ["Nucleus", "Ribosome", "Mitochondria", "Golgi"],
-    answer: 2,
+    id: "english",
+    title: "English & Literature",
+    subject: "English",
+    emoji: "📖",
+    questions: [
+      { q: "A 'metaphor' is a type of?", options: ["Punctuation", "Figure of speech", "Verb tense", "Genre"], answer: 1 },
+      { q: "Who wrote '1984'?", options: ["Huxley", "Orwell", "Tolkien", "Salinger"], answer: 1 },
+      { q: "Plural of 'mouse' (the animal)?", options: ["Mouses", "Mice", "Mices", "Meese"], answer: 1 },
+      { q: "Which is a synonym of 'happy'?", options: ["Morose", "Joyful", "Weary", "Bitter"], answer: 1 },
+      { q: "An onomatopoeia mimics?", options: ["Sights", "Smells", "Sounds", "Tastes"], answer: 2 },
+    ],
   },
 ];
 
 function TestMode() {
+  const [quizId, setQuizId] = useState<string | null>(null);
   const [i, setI] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
   const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
 
+  const quiz = QUIZZES.find((q) => q.id === quizId) || null;
+
+  if (!quiz) {
+    return (
+      <Card>
+        <h3 className="font-serif text-3xl mb-2">Choose a test</h3>
+        <p className="text-[#8892b0] text-sm mb-6">Pick a topic to get started.</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          {QUIZZES.map((q) => (
+            <button
+              key={q.id}
+              onClick={() => {
+                setQuizId(q.id);
+                setI(0);
+                setPicked(null);
+                setScore(0);
+                setDone(false);
+              }}
+              className="text-left p-5 rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/20 transition"
+            >
+              <div className="text-3xl mb-2">{q.emoji}</div>
+              <div className="font-semibold mb-1">{q.title}</div>
+              <div className="text-xs text-[#8892b0]">
+                {q.subject} · {q.questions.length} questions
+              </div>
+            </button>
+          ))}
+        </div>
+      </Card>
+    );
+  }
+
+  const QUIZ = quiz.questions;
   const item = QUIZ[i];
 
   const choose = (idx: number) => {
@@ -228,25 +305,39 @@ function TestMode() {
     return (
       <Card>
         <h3 className="font-serif text-3xl mb-2">Quiz complete!</h3>
+        <p className="text-[#8892b0] mb-1">{quiz.title}</p>
         <p className="text-[#8892b0] mb-6">
           You scored {score} / {QUIZ.length}.
         </p>
-        <button
-          onClick={reset}
-          className="px-5 py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] inline-flex items-center gap-2"
-        >
-          <RotateCcw className="w-4 h-4" /> Try again
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={reset}
+            className="px-5 py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] inline-flex items-center gap-2"
+          >
+            <RotateCcw className="w-4 h-4" /> Try again
+          </button>
+          <button
+            onClick={() => setQuizId(null)}
+            className="px-5 py-3 rounded-xl text-white text-sm font-medium border border-white/15 bg-white/[0.04] hover:bg-white/[0.08]"
+          >
+            ← Choose another test
+          </button>
+        </div>
       </Card>
     );
 
   return (
     <Card>
-      <div className="flex justify-between text-xs text-[#8892b0] mb-4">
+      <div className="flex justify-between items-center text-xs text-[#8892b0] mb-4">
+        <button
+          onClick={() => setQuizId(null)}
+          className="hover:text-white transition"
+        >
+          ← {quiz.title}
+        </button>
         <span>
-          Question {i + 1} of {QUIZ.length}
+          Question {i + 1} of {QUIZ.length} · Score: {score}
         </span>
-        <span>Score: {score}</span>
       </div>
       <h3 className="text-lg font-semibold mb-5">{item.q}</h3>
       <div className="grid gap-2">
