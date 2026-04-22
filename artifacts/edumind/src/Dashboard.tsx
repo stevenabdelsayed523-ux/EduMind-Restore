@@ -77,32 +77,51 @@ type ChatMsg = { role: "user" | "assistant"; content: string };
 function AIHelper() {
   const [messages, setMessages] = useLocal<ChatMsg[]>("edumind:chat", []);
   const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  const send = () => {
+  const send = async () => {
     const q = input.trim();
-    if (!q) return;
-    const reply = generateReply(q);
-    setMessages([
-      ...messages,
-      { role: "user", content: q },
-      { role: "assistant", content: reply },
-    ]);
+    if (!q || busy) return;
+    const next: ChatMsg[] = [...messages, { role: "user", content: q }];
+    setMessages(next);
     setInput("");
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next }),
+      });
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      const data = (await res.json()) as { content?: string; error?: string };
+      if (data.error) throw new Error(data.error);
+      setMessages([
+        ...next,
+        { role: "assistant", content: data.content || "(no response)" },
+      ]);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <div className="flex flex-col h-[70vh]">
       <Card className="flex-1 overflow-y-auto space-y-3">
-        {messages.length === 0 && (
+        {messages.length === 0 && !busy && (
           <p className="text-[#8892b0] text-sm">
-            Ask me anything about your studies — try “explain photosynthesis”
-            or “summarise World War 1 causes”.
+            Ask me anything about your studies — try "explain photosynthesis"
+            or "summarise the causes of World War 1".
           </p>
         )}
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+            className={`max-w-[80%] whitespace-pre-wrap px-4 py-3 rounded-2xl text-sm leading-relaxed ${
               m.role === "user"
                 ? "ml-auto bg-gradient-to-r from-[#4a84f5] to-[#6366f1] text-white"
                 : "mr-auto bg-white/[0.05] border border-white/[0.08]"
@@ -111,37 +130,36 @@ function AIHelper() {
             {m.content}
           </div>
         ))}
+        {busy && (
+          <div className="mr-auto bg-white/[0.05] border border-white/[0.08] px-4 py-3 rounded-2xl text-sm text-[#8892b0]">
+            Thinking…
+          </div>
+        )}
+        {err && (
+          <div className="mr-auto bg-rose-500/10 border border-rose-500/30 px-4 py-3 rounded-2xl text-sm text-rose-300">
+            {err}
+          </div>
+        )}
       </Card>
       <div className="flex gap-2 mt-3">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
+          disabled={busy}
           placeholder="Ask a study question…"
-          className="flex-1 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder:text-[#5a6480] focus:outline-none focus:border-[#4a84f5]"
+          className="flex-1 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder:text-[#5a6480] focus:outline-none focus:border-[#4a84f5] disabled:opacity-60"
         />
         <button
           onClick={send}
-          className="px-5 py-3 rounded-xl text-white font-medium text-sm bg-gradient-to-r from-[#4a84f5] to-[#6366f1] hover:opacity-90 inline-flex items-center gap-2"
+          disabled={busy}
+          className="px-5 py-3 rounded-xl text-white font-medium text-sm bg-gradient-to-r from-[#4a84f5] to-[#6366f1] hover:opacity-90 inline-flex items-center gap-2 disabled:opacity-60"
         >
           <Send className="w-4 h-4" /> Send
         </button>
       </div>
     </div>
   );
-}
-
-function generateReply(q: string): string {
-  const ql = q.toLowerCase();
-  if (ql.includes("photosynthesis"))
-    return "Photosynthesis is how plants convert sunlight, water, and CO₂ into glucose and oxygen. The reaction happens in chloroplasts and is summarised by: 6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂.";
-  if (ql.includes("pythagor"))
-    return "The Pythagorean theorem: in a right-angled triangle, a² + b² = c², where c is the hypotenuse.";
-  if (ql.match(/world war (1|i)\b/))
-    return "Main causes of WWI: militarism, alliances, imperialism, nationalism (MAIN), and the trigger was the assassination of Archduke Franz Ferdinand in June 1914.";
-  if (ql.includes("derivative"))
-    return "A derivative measures the instantaneous rate of change of a function. For f(x)=xⁿ, f′(x)=n·xⁿ⁻¹. The derivative of sin(x) is cos(x).";
-  return `Great question. Here's a starting point on "${q}":\n\n• Break the topic into 3 key ideas.\n• Write a one-sentence definition for each.\n• Find one example and one counter-example.\n• Quiz yourself in 24 hours to lock it in.`;
 }
 
 /* ---------------- Test Mode ---------------- */
