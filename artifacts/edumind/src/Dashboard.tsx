@@ -286,7 +286,18 @@ const QUIZZES: QuizSet[] = [
   },
 ];
 
+const YEAR_LEVELS = [
+  "Year 7",
+  "Year 8",
+  "Year 9",
+  "Year 10",
+  "Year 11",
+  "Year 12",
+  "University",
+];
+
 function TestMode() {
+  const [yearLevel, setYearLevel] = useLocal<string>("edumind:yearLevel", "Year 10");
   const [quizId, setQuizId] = useState<string | null>(null);
   const [i, setI] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
@@ -299,7 +310,29 @@ function TestMode() {
     return (
       <Card>
         <h3 className="font-serif text-3xl mb-2">Choose a test</h3>
-        <p className="text-[#8892b0] text-sm mb-6">Pick a topic to get started.</p>
+        <p className="text-[#8892b0] text-sm mb-5">
+          Pick your year level and a topic to get started.
+        </p>
+        <div className="mb-6">
+          <label className="block text-xs uppercase tracking-wide text-[#8892b0] mb-2">
+            Year level
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {YEAR_LEVELS.map((y) => (
+              <button
+                key={y}
+                onClick={() => setYearLevel(y)}
+                className={`px-4 py-2 rounded-full text-sm border transition ${
+                  yearLevel === y
+                    ? "border-[#4a84f5] bg-[#4a84f5]/15 text-white"
+                    : "border-white/10 bg-white/[0.03] text-[#cbd2e0] hover:border-white/20"
+                }`}
+              >
+                {y}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="grid sm:grid-cols-2 gap-3">
           {QUIZZES.map((q) => (
             <button
@@ -316,7 +349,7 @@ function TestMode() {
               <div className="text-3xl mb-2">{q.emoji}</div>
               <div className="font-semibold mb-1">{q.title}</div>
               <div className="text-xs text-[#8892b0]">
-                {q.subject} · {q.questions.length} questions
+                {yearLevel} · {q.subject} · {q.questions.length} questions
               </div>
             </button>
           ))}
