@@ -16,6 +16,11 @@ import {
   Target,
   Clock,
   Home,
+  Languages,
+  Crown,
+  Settings as SettingsIcon,
+  Ticket,
+  Sparkles,
 } from "lucide-react";
 
 type ViewKey =
@@ -25,16 +30,35 @@ type ViewKey =
   | "notes"
   | "flashcards"
   | "plan"
-  | "stats";
+  | "stats"
+  | "language"
+  | "settings"
+  | "codes";
 
 const NAV: { key: ViewKey; label: string; icon: typeof Brain }[] = [
   { key: "overview", label: "Overview", icon: Home },
   { key: "ai", label: "AI Helper", icon: Brain },
+  { key: "language", label: "Language Tutor", icon: Languages },
   { key: "test", label: "Test Mode", icon: Zap },
   { key: "notes", label: "Smart Notes", icon: FileText },
   { key: "flashcards", label: "Flashcards", icon: Bookmark },
   { key: "plan", label: "Study Plan", icon: Calendar },
   { key: "stats", label: "Progress", icon: Trophy },
+  { key: "codes", label: "Promo Codes", icon: Ticket },
+  { key: "settings", label: "Settings", icon: SettingsIcon },
+];
+
+/* ---------------- Subscription ---------------- */
+export type Tier = "free" | "pro" | "max";
+export const TIER_LABELS: Record<Tier, string> = {
+  free: "Free",
+  pro: "Pro",
+  max: "Max Plus",
+};
+export const PROMO_CODES: { code: string; tier: Tier; desc: string }[] = [
+  { code: "MAXPLUS2026", tier: "max", desc: "Unlocks Max Plus — every feature, unlimited usage." },
+  { code: "EDUSTUDENT", tier: "pro", desc: "Student perk — upgrades you to Pro." },
+  { code: "WELCOME", tier: "pro", desc: "Welcome gift — try Pro for free." },
 ];
 
 function useLocal<T>(key: string, initial: T) {
@@ -54,6 +78,10 @@ function useLocal<T>(key: string, initial: T) {
     }
   }, [key, value]);
   return [value, setValue] as const;
+}
+
+function useTier() {
+  return useLocal<Tier>("edumind:tier", "free");
 }
 
 function Card({
@@ -111,6 +139,19 @@ function AIHelper() {
 
   return (
     <div className="flex flex-col h-[70vh]">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-serif text-2xl">AI Helper</h2>
+        <button
+          onClick={() => {
+            setMessages([]);
+            setErr(null);
+          }}
+          disabled={messages.length === 0 || busy}
+          className="text-xs px-3 py-2 rounded-lg border border-white/10 bg-white/[0.04] text-[#cbd2e0] hover:bg-white/[0.08] disabled:opacity-40 inline-flex items-center gap-1.5"
+        >
+          <Trash2 className="w-3.5 h-3.5" /> Clear chat
+        </button>
+      </div>
       <Card className="flex-1 overflow-y-auto space-y-3">
         {messages.length === 0 && !busy && (
           <p className="text-[#8892b0] text-sm">
@@ -287,6 +328,12 @@ const QUIZZES: QuizSet[] = [
 ];
 
 const YEAR_LEVELS = [
+  "Year 1",
+  "Year 2",
+  "Year 3",
+  "Year 4",
+  "Year 5",
+  "Year 6",
   "Year 7",
   "Year 8",
   "Year 9",
@@ -294,6 +341,7 @@ const YEAR_LEVELS = [
   "Year 11",
   "Year 12",
   "University",
+  "Adult Learner",
 ];
 
 function TestMode() {
@@ -831,6 +879,330 @@ function Overview({ go }: { go: (k: ViewKey) => void }) {
   );
 }
 
+/* ---------------- Language Tutor ---------------- */
+const LANGUAGES = [
+  { code: "es", label: "Spanish", emoji: "🇪🇸" },
+  { code: "fr", label: "French", emoji: "🇫🇷" },
+  { code: "de", label: "German", emoji: "🇩🇪" },
+  { code: "it", label: "Italian", emoji: "🇮🇹" },
+  { code: "ja", label: "Japanese", emoji: "🇯🇵" },
+  { code: "zh", label: "Mandarin", emoji: "🇨🇳" },
+  { code: "ko", label: "Korean", emoji: "🇰🇷" },
+  { code: "pt", label: "Portuguese", emoji: "🇵🇹" },
+];
+const LEVELS = ["Beginner", "Intermediate", "Advanced"];
+
+function LanguageTutor() {
+  const [lang, setLang] = useLocal<string>("edumind:lang", "Spanish");
+  const [level, setLevel] = useLocal<string>("edumind:langLevel", "Beginner");
+  const [messages, setMessages] = useLocal<ChatMsg[]>("edumind:langChat", []);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const system = `You are a warm, patient ${lang} language tutor for a ${level.toLowerCase()} learner.
+Reply in ${lang} first, then give an English translation in italics on a new line, then briefly explain any new vocabulary or grammar in English.
+Ask one short follow-up question in ${lang} to keep the conversation going. Keep responses under 200 words.`;
+
+  const send = async () => {
+    const q = input.trim();
+    if (!q || busy) return;
+    const next: ChatMsg[] = [...messages, { role: "user", content: q }];
+    setMessages(next);
+    setInput("");
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next, system }),
+      });
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      const data = (await res.json()) as { content?: string; error?: string };
+      if (data.error) throw new Error(data.error);
+      setMessages([
+        ...next,
+        { role: "assistant", content: data.content || "(no response)" },
+      ]);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-[75vh]">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
+        <h2 className="font-serif text-2xl">Language Tutor</h2>
+        <button
+          onClick={() => {
+            setMessages([]);
+            setErr(null);
+          }}
+          disabled={messages.length === 0 || busy}
+          className="text-xs px-3 py-2 rounded-lg border border-white/10 bg-white/[0.04] text-[#cbd2e0] hover:bg-white/[0.08] disabled:opacity-40 inline-flex items-center gap-1.5"
+        >
+          <Trash2 className="w-3.5 h-3.5" /> Clear chat
+        </button>
+      </div>
+      <Card className="mb-3 space-y-3">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-[#8892b0] mb-2">
+            Language
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {LANGUAGES.map((l) => (
+              <button
+                key={l.code}
+                onClick={() => setLang(l.label)}
+                className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                  lang === l.label
+                    ? "border-[#4a84f5] bg-[#4a84f5]/15 text-white"
+                    : "border-white/10 bg-white/[0.03] text-[#cbd2e0] hover:border-white/20"
+                }`}
+              >
+                {l.emoji} {l.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wide text-[#8892b0] mb-2">
+            Level
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {LEVELS.map((lv) => (
+              <button
+                key={lv}
+                onClick={() => setLevel(lv)}
+                className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                  level === lv
+                    ? "border-[#4a84f5] bg-[#4a84f5]/15 text-white"
+                    : "border-white/10 bg-white/[0.03] text-[#cbd2e0] hover:border-white/20"
+                }`}
+              >
+                {lv}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Card>
+      <Card className="flex-1 overflow-y-auto space-y-3">
+        {messages.length === 0 && !busy && (
+          <p className="text-[#8892b0] text-sm">
+            Say "hola" or ask "how do I introduce myself in {lang}?" to start
+            practising.
+          </p>
+        )}
+        {messages.map((m, i) => (
+          <div
+            key={i}
+            className={`max-w-[80%] whitespace-pre-wrap px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+              m.role === "user"
+                ? "ml-auto bg-gradient-to-r from-[#4a84f5] to-[#6366f1] text-white"
+                : "mr-auto bg-white/[0.05] border border-white/[0.08]"
+            }`}
+          >
+            {m.content}
+          </div>
+        ))}
+        {busy && (
+          <div className="mr-auto bg-white/[0.05] border border-white/[0.08] px-4 py-3 rounded-2xl text-sm text-[#8892b0]">
+            Thinking…
+          </div>
+        )}
+        {err && (
+          <div className="mr-auto bg-rose-500/10 border border-rose-500/30 px-4 py-3 rounded-2xl text-sm text-rose-300">
+            {err}
+          </div>
+        )}
+      </Card>
+      <div className="flex gap-2 mt-3">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && send()}
+          disabled={busy}
+          placeholder={`Practise your ${lang}…`}
+          className="flex-1 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder:text-[#5a6480] focus:outline-none focus:border-[#4a84f5] disabled:opacity-60"
+        />
+        <button
+          onClick={send}
+          disabled={busy}
+          className="px-5 py-3 rounded-xl text-white font-medium text-sm bg-gradient-to-r from-[#4a84f5] to-[#6366f1] hover:opacity-90 inline-flex items-center gap-2 disabled:opacity-60"
+        >
+          <Send className="w-4 h-4" /> Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Settings ---------------- */
+function Settings({ go }: { go: (k: ViewKey) => void }) {
+  const [tier, setTier] = useTier();
+  const [code, setCode] = useState("");
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const apply = () => {
+    const c = code.trim().toUpperCase();
+    if (!c) return;
+    const found = PROMO_CODES.find((p) => p.code === c);
+    if (!found) {
+      setMsg({ kind: "err", text: "That code didn't work. Check the Promo Codes page." });
+      return;
+    }
+    setTier(found.tier);
+    setMsg({ kind: "ok", text: `Success! ${TIER_LABELS[found.tier]} unlocked.` });
+    setCode("");
+  };
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="font-serif text-3xl mb-1">Settings</h2>
+        <p className="text-[#8892b0] text-sm">Manage your plan and access.</p>
+      </div>
+
+      <Card>
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center">
+            <Crown className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <div className="text-xs text-[#8892b0]">Current plan</div>
+            <div className="text-xl font-semibold">{TIER_LABELS[tier]}</div>
+          </div>
+        </div>
+        {tier === "free" && (
+          <p className="text-sm text-[#8892b0]">
+            You're on the Free plan. Enter a promo code below to upgrade.
+          </p>
+        )}
+        {tier === "pro" && (
+          <p className="text-sm text-[#8892b0]">
+            Pro unlocked — extra quizzes and longer chats. Enter a Max Plus
+            code to go further.
+          </p>
+        )}
+        {tier === "max" && (
+          <p className="text-sm text-[#8892b0]">
+            Max Plus is active — every feature, unlimited usage. Enjoy!
+          </p>
+        )}
+      </Card>
+
+      <Card>
+        <h3 className="font-semibold mb-3 inline-flex items-center gap-2">
+          <Ticket className="w-4 h-4 text-[#7ba8ff]" /> Redeem a code
+        </h3>
+        <div className="flex gap-2">
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && apply()}
+            placeholder="Enter promo code"
+            className="flex-1 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder:text-[#5a6480] focus:outline-none focus:border-[#4a84f5] uppercase tracking-wide"
+          />
+          <button
+            onClick={apply}
+            className="px-5 py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] hover:opacity-90"
+          >
+            Apply
+          </button>
+        </div>
+        {msg && (
+          <div
+            className={`mt-3 text-sm px-3 py-2 rounded-lg ${
+              msg.kind === "ok"
+                ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
+                : "bg-rose-500/10 border border-rose-500/30 text-rose-300"
+            }`}
+          >
+            {msg.text}
+          </div>
+        )}
+        <button
+          onClick={() => go("codes")}
+          className="mt-4 text-xs text-[#7ba8ff] hover:underline"
+        >
+          See available codes →
+        </button>
+      </Card>
+
+      {tier !== "free" && (
+        <Card>
+          <h3 className="font-semibold mb-2">Reset plan</h3>
+          <p className="text-sm text-[#8892b0] mb-3">
+            Go back to the Free plan.
+          </p>
+          <button
+            onClick={() => {
+              setTier("free");
+              setMsg({ kind: "ok", text: "Plan reset to Free." });
+            }}
+            className="px-4 py-2 rounded-lg text-sm border border-white/15 bg-white/[0.04] hover:bg-white/[0.08]"
+          >
+            Reset to Free
+          </button>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Promo Codes page ---------------- */
+function Codes({ go }: { go: (k: ViewKey) => void }) {
+  const [tier] = useTier();
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <div>
+        <h2 className="font-serif text-3xl mb-1 inline-flex items-center gap-3">
+          <Sparkles className="w-7 h-7 text-amber-300" /> Promo Codes
+        </h2>
+        <p className="text-[#8892b0] text-sm">
+          Use any of these codes in Settings → Redeem a code. Currently on{" "}
+          <span className="text-white font-medium">{TIER_LABELS[tier]}</span>.
+        </p>
+      </div>
+
+      <div className="grid gap-3">
+        {PROMO_CODES.map((p) => (
+          <Card key={p.code}>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="font-mono text-lg font-semibold tracking-wider text-white">
+                  {p.code}
+                </div>
+                <div className="text-sm text-[#8892b0] mt-1">{p.desc}</div>
+              </div>
+              <div
+                className={`px-3 py-1 rounded-full text-xs font-medium border ${
+                  p.tier === "max"
+                    ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                    : "border-[#4a84f5]/40 bg-[#4a84f5]/10 text-[#7ba8ff]"
+                }`}
+              >
+                Unlocks {TIER_LABELS[p.tier]}
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      <button
+        onClick={() => go("settings")}
+        className="px-5 py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] inline-flex items-center gap-2"
+      >
+        <Ticket className="w-4 h-4" /> Go to Settings to redeem
+      </button>
+    </div>
+  );
+}
+
 /* ---------------- Shell ---------------- */
 export default function Dashboard({ onExit }: { onExit: () => void }) {
   const [view, setView] = useState<ViewKey>("overview");
@@ -851,6 +1223,12 @@ export default function Dashboard({ onExit }: { onExit: () => void }) {
         return <StudyPlan />;
       case "stats":
         return <Stats />;
+      case "language":
+        return <LanguageTutor />;
+      case "settings":
+        return <Settings go={setView} />;
+      case "codes":
+        return <Codes go={setView} />;
     }
   };
 

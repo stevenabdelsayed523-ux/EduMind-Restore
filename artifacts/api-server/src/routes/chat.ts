@@ -9,7 +9,7 @@ const client = new Anthropic({
   baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
 });
 
-const SYSTEM = `You are EduMind, a friendly study tutor for students from primary school through university.
+const DEFAULT_SYSTEM = `You are EduMind, a friendly study tutor for students from primary school through university.
 Explain clearly, use short paragraphs, give worked examples when helpful, and end with one quick check-for-understanding question when relevant.
 Keep answers concise (under 250 words) unless the user asks for more depth.`;
 
@@ -20,12 +20,16 @@ router.post("/chat", async (req, res) => {
 
   const messages = Array.isArray(req.body?.messages) ? req.body.messages : null;
   if (!messages) return res.status(400).json({ error: "messages required" });
+  const system =
+    typeof req.body?.system === "string" && req.body.system.trim()
+      ? req.body.system.trim()
+      : DEFAULT_SYSTEM;
 
   try {
     const result = await client.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 8192,
-      system: SYSTEM,
+      system,
       messages: messages.map((m: { role: string; content: string }) => ({
         role: m.role === "assistant" ? "assistant" : "user",
         content: String(m.content ?? ""),
