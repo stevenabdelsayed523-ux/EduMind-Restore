@@ -21,6 +21,10 @@ import {
   Settings as SettingsIcon,
   Ticket,
   Sparkles,
+  GraduationCap,
+  Users,
+  UserPlus,
+  Copy,
 } from "lucide-react";
 
 type ViewKey =
@@ -82,6 +86,11 @@ function useLocal<T>(key: string, initial: T) {
 
 function useTier() {
   return useLocal<Tier>("edumind:tier", "free");
+}
+
+export type Role = "student" | "teacher";
+function useRole() {
+  return useLocal<Role | null>("edumind:role", null);
 }
 
 function Card({
@@ -344,8 +353,11 @@ const YEAR_LEVELS = [
   "Adult Learner",
 ];
 
+const QUESTION_COUNTS = [3, 5, 10, 15, 20];
+
 function TestMode() {
   const [yearLevel, setYearLevel] = useLocal<string>("edumind:yearLevel", "Year 10");
+  const [questionCount, setQuestionCount] = useLocal<number>("edumind:qCount", 5);
   const [quizId, setQuizId] = useState<string | null>(null);
   const [i, setI] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
@@ -374,7 +386,7 @@ function TestMode() {
         body: JSON.stringify({
           subject: q.subject,
           yearLevel,
-          count: 5,
+          count: questionCount,
         }),
       });
       if (!res.ok) throw new Error(`Request failed (${res.status})`);
@@ -401,7 +413,7 @@ function TestMode() {
         <p className="text-[#8892b0] text-sm mb-5">
           Pick your year level and a topic to get started.
         </p>
-        <div className="mb-6">
+        <div className="mb-5">
           <label className="block text-xs uppercase tracking-wide text-[#8892b0] mb-2">
             Year level
           </label>
@@ -421,6 +433,26 @@ function TestMode() {
             ))}
           </div>
         </div>
+        <div className="mb-6">
+          <label className="block text-xs uppercase tracking-wide text-[#8892b0] mb-2">
+            Number of questions
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {QUESTION_COUNTS.map((n) => (
+              <button
+                key={n}
+                onClick={() => setQuestionCount(n)}
+                className={`px-4 py-2 rounded-full text-sm border transition ${
+                  questionCount === n
+                    ? "border-[#4a84f5] bg-[#4a84f5]/15 text-white"
+                    : "border-white/10 bg-white/[0.03] text-[#cbd2e0] hover:border-white/20"
+                }`}
+              >
+                {n} questions
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="grid sm:grid-cols-2 gap-3">
           {QUIZZES.map((q) => (
             <button
@@ -431,7 +463,7 @@ function TestMode() {
               <div className="text-3xl mb-2">{q.emoji}</div>
               <div className="font-semibold mb-1">{q.title}</div>
               <div className="text-xs text-[#8892b0]">
-                {yearLevel} · {q.subject} · AI-generated · 5 questions
+                {yearLevel} · {q.subject} · AI-generated · {questionCount} questions
               </div>
             </button>
           ))}
@@ -1100,9 +1132,247 @@ Ask one short follow-up question in ${lang} to keep the conversation going. Keep
   );
 }
 
+/* ---------------- Friends ---------------- */
+type FriendInfo = { code: string; name: string | null; streak: number };
+type Me = { code: string; streak: number; friends: FriendInfo[] };
+
+function FriendsCard() {
+  const [me, setMe] = useState<Me | null>(null);
+  const [friendCode, setFriendCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const refresh = async () => {
+    try {
+      const res = await fetch("/api/me", { credentials: "include" });
+      if (!res.ok) return;
+      setMe(await res.json());
+    } catch {
+      /* ignore */
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+    try {
+      const stats = JSON.parse(localStorage.getItem("edumind:stats") || "{}");
+      const streak = Number(stats.streak) || 1;
+      fetch("/api/streak", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ streak }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const addFriend = async () => {
+    const code = friendCode.replace(/\D/g, "").slice(-6);
+    if (code.length !== 6) {
+      setMsg({ kind: "err", text: "Enter a 6-digit code." });
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/friends/add", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = (await res.json()) as { error?: string; friend?: FriendInfo };
+      if (!res.ok || data.error) throw new Error(data.error || "Failed");
+      setMsg({
+        kind: "ok",
+        text: `Friend added: ${data.friend?.name || "Anonymous"} 🎉`,
+      });
+      setFriendCode("");
+      refresh();
+    } catch (e) {
+      setMsg({
+        kind: "err",
+        text: e instanceof Error ? e.message : "Couldn't add friend",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeFriend = async (code: string) => {
+    await fetch("/api/friends/remove", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    refresh();
+  };
+
+  const copy = async () => {
+    if (!me) return;
+    try {
+      await navigator.clipboard.writeText(me.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <Card>
+      <h3 className="font-semibold mb-3 inline-flex items-center gap-2">
+        <Users className="w-4 h-4 text-[#7ba8ff]" /> Friends
+      </h3>
+      <div className="mb-4">
+        <div className="text-xs text-[#8892b0] mb-1">Your friend code</div>
+        <div className="flex items-center gap-2">
+          <div className="font-mono text-2xl tracking-[0.4em] px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10">
+            {me?.code || "······"}
+          </div>
+          <button
+            onClick={copy}
+            disabled={!me}
+            className="px-3 py-3 rounded-xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] text-xs inline-flex items-center gap-1.5"
+          >
+            <Copy className="w-3.5 h-3.5" /> {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <p className="text-xs text-[#8892b0] mt-2">
+          Share this code with a friend so they can add you.
+        </p>
+      </div>
+
+      <div className="mb-2 text-xs uppercase tracking-wide text-[#8892b0]">
+        Add a friend
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={friendCode}
+          onChange={(e) =>
+            setFriendCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+          }
+          onKeyDown={(e) => e.key === "Enter" && addFriend()}
+          placeholder="123456"
+          inputMode="numeric"
+          className="flex-1 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder:text-[#5a6480] focus:outline-none focus:border-[#4a84f5] font-mono tracking-[0.4em]"
+        />
+        <button
+          onClick={addFriend}
+          disabled={busy}
+          className="px-4 py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] hover:opacity-90 disabled:opacity-60 inline-flex items-center gap-1.5"
+        >
+          <UserPlus className="w-4 h-4" /> Add
+        </button>
+      </div>
+      {msg && (
+        <div
+          className={`mt-3 text-sm px-3 py-2 rounded-lg ${
+            msg.kind === "ok"
+              ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
+              : "bg-rose-500/10 border border-rose-500/30 text-rose-300"
+          }`}
+        >
+          {msg.text}
+        </div>
+      )}
+
+      <div className="mt-5">
+        <div className="text-xs uppercase tracking-wide text-[#8892b0] mb-2">
+          Your friends ({me?.friends.length || 0})
+        </div>
+        {!me?.friends.length ? (
+          <p className="text-sm text-[#8892b0]">
+            No friends yet — add one above to see their streak.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {me.friends.map((f) => (
+              <div
+                key={f.code}
+                className="flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/[0.03]"
+              >
+                <div>
+                  <div className="font-medium">{f.name || "Anonymous"}</div>
+                  <div className="text-xs text-[#8892b0] font-mono">
+                    #{f.code}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="inline-flex items-center gap-1 text-amber-300 text-sm">
+                    <Flame className="w-4 h-4" /> {f.streak} day
+                    {f.streak === 1 ? "" : "s"}
+                  </div>
+                  <button
+                    onClick={() => removeFriend(f.code)}
+                    className="text-xs text-[#8892b0] hover:text-rose-300"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/* ---------------- Role picker (first-run) ---------------- */
+function RolePicker({ onPick }: { onPick: (r: Role) => void }) {
+  return (
+    <div className="min-h-screen bg-[#0a0d14] text-[#e8ecf8] font-sans flex items-center justify-center px-6">
+      <div className="max-w-2xl w-full">
+        <h1 className="font-serif text-4xl mb-3 text-center">
+          Welcome to <span className="italic text-[#7ba8ff]">EduMind</span>
+        </h1>
+        <p className="text-[#8892b0] text-center mb-10">
+          Are you signing in as a student or a teacher?
+        </p>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <button
+            onClick={() => onPick("student")}
+            className="p-8 rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/20 transition text-left"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#4a84f5] to-[#6366f1] flex items-center justify-center mb-4">
+              <GraduationCap className="w-7 h-7 text-white" />
+            </div>
+            <div className="text-xl font-semibold mb-1">I'm a student</div>
+            <div className="text-sm text-[#8892b0]">
+              Tests, flashcards, AI helper, language tutor and study plans.
+            </div>
+          </button>
+          <button
+            onClick={() => onPick("teacher")}
+            className="p-8 rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/20 transition text-left"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center mb-4">
+              <Brain className="w-7 h-7 text-white" />
+            </div>
+            <div className="text-xl font-semibold mb-1">I'm a teacher</div>
+            <div className="text-sm text-[#8892b0]">
+              Generate quizzes, lesson notes and explanations to share with
+              your class.
+            </div>
+          </button>
+        </div>
+        <p className="text-xs text-[#5a6480] text-center mt-8">
+          You can change this later in Settings.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Settings ---------------- */
 function Settings({ go }: { go: (k: ViewKey) => void }) {
   const [tier, setTier] = useTier();
+  const [role, setRole] = useRole();
   const [code, setCode] = useState("");
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -1123,8 +1393,31 @@ function Settings({ go }: { go: (k: ViewKey) => void }) {
     <div className="space-y-6 max-w-2xl">
       <div>
         <h2 className="font-serif text-3xl mb-1">Settings</h2>
-        <p className="text-[#8892b0] text-sm">Manage your plan and access.</p>
+        <p className="text-[#8892b0] text-sm">Manage your plan, role and friends.</p>
       </div>
+
+      <Card>
+        <h3 className="font-semibold mb-3 inline-flex items-center gap-2">
+          <GraduationCap className="w-4 h-4 text-[#7ba8ff]" /> I am a…
+        </h3>
+        <div className="flex flex-wrap gap-2">
+          {(["student", "teacher"] as Role[]).map((r) => (
+            <button
+              key={r}
+              onClick={() => setRole(r)}
+              className={`px-4 py-2 rounded-full text-sm border transition capitalize ${
+                role === r
+                  ? "border-[#4a84f5] bg-[#4a84f5]/15 text-white"
+                  : "border-white/10 bg-white/[0.03] text-[#cbd2e0] hover:border-white/20"
+              }`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      <FriendsCard />
 
       <Card>
         <div className="flex items-center gap-3 mb-3">
@@ -1265,6 +1558,8 @@ function Codes({ go }: { go: (k: ViewKey) => void }) {
 /* ---------------- Shell ---------------- */
 export default function Dashboard({ onExit }: { onExit: () => void }) {
   const [view, setView] = useState<ViewKey>("overview");
+  const [role, setRole] = useRole();
+  if (!role) return <RolePicker onPick={setRole} />;
 
   const Body = () => {
     switch (view) {
