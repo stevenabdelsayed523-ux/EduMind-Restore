@@ -351,8 +351,48 @@ function TestMode() {
   const [picked, setPicked] = useState<number | null>(null);
   const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
+  const [questions, setQuestions] = useState<QuizItem[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
   const quiz = QUIZZES.find((q) => q.id === quizId) || null;
+
+  const startQuiz = async (q: QuizSet) => {
+    setQuizId(q.id);
+    setI(0);
+    setPicked(null);
+    setScore(0);
+    setDone(false);
+    setQuestions(null);
+    setLoadErr(null);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/quiz", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: q.subject,
+          yearLevel,
+          count: 5,
+        }),
+      });
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      const data = (await res.json()) as { questions?: QuizItem[]; error?: string };
+      if (data.error || !data.questions?.length) {
+        throw new Error(data.error || "No questions returned");
+      }
+      setQuestions(data.questions);
+    } catch (e) {
+      setLoadErr(
+        (e instanceof Error ? e.message : "Couldn't generate") +
+          " — using sample questions instead.",
+      );
+      setQuestions(q.questions);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (!quiz) {
     return (
@@ -385,19 +425,13 @@ function TestMode() {
           {QUIZZES.map((q) => (
             <button
               key={q.id}
-              onClick={() => {
-                setQuizId(q.id);
-                setI(0);
-                setPicked(null);
-                setScore(0);
-                setDone(false);
-              }}
+              onClick={() => startQuiz(q)}
               className="text-left p-5 rounded-2xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/20 transition"
             >
               <div className="text-3xl mb-2">{q.emoji}</div>
               <div className="font-semibold mb-1">{q.title}</div>
               <div className="text-xs text-[#8892b0]">
-                {yearLevel} · {q.subject} · {q.questions.length} questions
+                {yearLevel} · {q.subject} · AI-generated · 5 questions
               </div>
             </button>
           ))}
@@ -406,7 +440,25 @@ function TestMode() {
     );
   }
 
-  const QUIZ = quiz.questions;
+  if (loading || !questions) {
+    return (
+      <Card>
+        <div className="flex items-center gap-3 text-[#8892b0]">
+          <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+          <div>
+            <div className="font-medium text-white">
+              Generating your {quiz.subject} quiz…
+            </div>
+            <div className="text-xs">
+              Tailored for {yearLevel}. This usually takes a few seconds.
+            </div>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  const QUIZ = questions;
   const item = QUIZ[i];
 
   const choose = (idx: number) => {
@@ -427,13 +479,6 @@ function TestMode() {
       setPicked(null);
     }
   };
-  const reset = () => {
-    setI(0);
-    setPicked(null);
-    setScore(0);
-    setDone(false);
-  };
-
   if (done)
     return (
       <Card>
@@ -442,15 +487,22 @@ function TestMode() {
         <p className="text-[#8892b0] mb-6">
           You scored {score} / {QUIZ.length}.
         </p>
+        {loadErr && (
+          <p className="text-xs text-amber-300 mb-4">{loadErr}</p>
+        )}
         <div className="flex gap-2 flex-wrap">
           <button
-            onClick={reset}
+            onClick={() => startQuiz(quiz)}
             className="px-5 py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] inline-flex items-center gap-2"
           >
-            <RotateCcw className="w-4 h-4" /> Try again
+            <RotateCcw className="w-4 h-4" /> New questions
           </button>
           <button
-            onClick={() => setQuizId(null)}
+            onClick={() => {
+              setQuizId(null);
+              setQuestions(null);
+              setLoadErr(null);
+            }}
             className="px-5 py-3 rounded-xl text-white text-sm font-medium border border-white/15 bg-white/[0.04] hover:bg-white/[0.08]"
           >
             ← Choose another test
@@ -463,7 +515,11 @@ function TestMode() {
     <Card>
       <div className="flex justify-between items-center text-xs text-[#8892b0] mb-4">
         <button
-          onClick={() => setQuizId(null)}
+          onClick={() => {
+            setQuizId(null);
+            setQuestions(null);
+            setLoadErr(null);
+          }}
           className="hover:text-white transition"
         >
           ← {quiz.title}
@@ -472,6 +528,9 @@ function TestMode() {
           Question {i + 1} of {QUIZ.length} · Score: {score}
         </span>
       </div>
+      {loadErr && (
+        <p className="text-xs text-amber-300 mb-3">{loadErr}</p>
+      )}
       <h3 className="text-lg font-semibold mb-5">{item.q}</h3>
       <div className="grid gap-2">
         {item.options.map((o, idx) => {
