@@ -25,6 +25,8 @@ import {
   Users,
   UserPlus,
   Copy,
+  Swords,
+  X,
 } from "lucide-react";
 
 type ViewKey =
@@ -37,7 +39,8 @@ type ViewKey =
   | "stats"
   | "language"
   | "settings"
-  | "codes";
+  | "codes"
+  | "challenges";
 
 const NAV: { key: ViewKey; label: string; icon: typeof Brain }[] = [
   { key: "overview", label: "Overview", icon: Home },
@@ -48,6 +51,7 @@ const NAV: { key: ViewKey; label: string; icon: typeof Brain }[] = [
   { key: "flashcards", label: "Flashcards", icon: Bookmark },
   { key: "plan", label: "Study Plan", icon: Calendar },
   { key: "stats", label: "Progress", icon: Trophy },
+  { key: "challenges", label: "Challenges", icon: Swords },
   { key: "codes", label: "Promo Codes", icon: Ticket },
   { key: "settings", label: "Settings", icon: SettingsIcon },
 ];
@@ -355,6 +359,15 @@ const YEAR_LEVELS = [
 
 const QUESTION_COUNTS = [3, 5, 10, 15, 20];
 
+type PendingChallenge = {
+  id: string;
+  subject: string;
+  yearLevel: string;
+  scoreToBeat: number;
+  total: number;
+  fromName: string;
+};
+
 function TestMode() {
   const [yearLevel, setYearLevel] = useLocal<string>("edumind:yearLevel", "Year 10");
   const [questionCount, setQuestionCount] = useLocal<number>("edumind:qCount", 5);
@@ -366,6 +379,60 @@ function TestMode() {
   const [questions, setQuestions] = useState<QuizItem[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingChallenge | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
+  const [sentMsg, setSentMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/me", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setMe)
+      .catch(() => {});
+    try {
+      const raw = sessionStorage.getItem("edumind:pendingChallenge");
+      if (raw) {
+        const p = JSON.parse(raw) as PendingChallenge;
+        sessionStorage.removeItem("edumind:pendingChallenge");
+        setPending(p);
+        const matched =
+          QUIZZES.find((q) => q.subject === p.subject) || QUIZZES[0];
+        setQuizId(matched.id);
+        setI(0);
+        setPicked(null);
+        setScore(0);
+        setDone(false);
+        setQuestions(null);
+        setLoadErr(null);
+        setLoading(true);
+        fetch("/api/quiz", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subject: p.subject,
+            yearLevel: p.yearLevel,
+            count: p.total,
+          }),
+        })
+          .then((r) => r.json())
+          .then((data: { questions?: QuizItem[]; error?: string }) => {
+            if (data.error || !data.questions?.length) {
+              setLoadErr("Couldn't generate — using sample questions.");
+              setQuestions(matched.questions);
+            } else {
+              setQuestions(data.questions);
+            }
+          })
+          .catch(() => {
+            setLoadErr("Couldn't generate — using sample questions.");
+            setQuestions(matched.questions);
+          })
+          .finally(() => setLoading(false));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const quiz = QUIZZES.find((q) => q.id === quizId) || null;
 
@@ -501,47 +568,148 @@ function TestMode() {
   const next = () => {
     if (i + 1 >= QUIZ.length) {
       setDone(true);
+      const finalScore = score + (picked === item.answer ? 1 : 0);
       const stats = JSON.parse(localStorage.getItem("edumind:stats") || "{}");
       stats.tests = (stats.tests || 0) + 1;
-      stats.correct = (stats.correct || 0) + score + (picked === item.answer ? 1 : 0);
+      stats.correct = (stats.correct || 0) + finalScore;
       stats.total = (stats.total || 0) + QUIZ.length;
       localStorage.setItem("edumind:stats", JSON.stringify(stats));
+      if (pending) {
+        fetch(`/api/challenges/${pending.id}/result`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ score: finalScore }),
+        }).catch(() => {});
+      }
     } else {
       setI(i + 1);
       setPicked(null);
     }
   };
-  if (done)
+
+  const sendChallenge = async (friendCode: string) => {
+    if (!quiz) return;
+    setSentMsg(null);
+    try {
+      const res = await fetch("/api/challenges", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: friendCode,
+          subject: quiz.subject,
+          yearLevel,
+          score,
+          total: QUIZ.length,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Failed");
+      setSentMsg("Challenge sent! 🎯");
+    } catch (e) {
+      setSentMsg(
+        e instanceof Error ? `Couldn't send: ${e.message}` : "Couldn't send",
+      );
+    }
+  };
+
+  if (done) {
+    const beat = pending ? score > pending.scoreToBeat : null;
     return (
-      <Card>
-        <h3 className="font-serif text-3xl mb-2">Quiz complete!</h3>
-        <p className="text-[#8892b0] mb-1">{quiz.title}</p>
-        <p className="text-[#8892b0] mb-6">
-          You scored {score} / {QUIZ.length}.
-        </p>
-        {loadErr && (
-          <p className="text-xs text-amber-300 mb-4">{loadErr}</p>
+      <div className="space-y-4 max-w-2xl">
+        <Card>
+          <h3 className="font-serif text-3xl mb-2">Quiz complete!</h3>
+          <p className="text-[#8892b0] mb-1">{quiz.title}</p>
+          <p className="text-[#8892b0] mb-6">
+            You scored {score} / {QUIZ.length}.
+          </p>
+          {pending && (
+            <div
+              className={`mb-5 px-4 py-3 rounded-xl border ${
+                beat
+                  ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
+                  : "bg-rose-500/10 border-rose-500/40 text-rose-300"
+              }`}
+            >
+              {beat
+                ? `🏆 You beat ${pending.fromName}'s score of ${pending.scoreToBeat}!`
+                : `${pending.fromName} scored ${pending.scoreToBeat} — keep practising!`}
+            </div>
+          )}
+          {loadErr && <p className="text-xs text-amber-300 mb-4">{loadErr}</p>}
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => {
+                setPending(null);
+                startQuiz(quiz);
+              }}
+              className="px-5 py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] inline-flex items-center gap-2"
+            >
+              <RotateCcw className="w-4 h-4" /> New questions
+            </button>
+            <button
+              onClick={() => {
+                setQuizId(null);
+                setQuestions(null);
+                setLoadErr(null);
+                setPending(null);
+              }}
+              className="px-5 py-3 rounded-xl text-white text-sm font-medium border border-white/15 bg-white/[0.04] hover:bg-white/[0.08]"
+            >
+              ← Choose another test
+            </button>
+          </div>
+        </Card>
+
+        {!pending && (
+          <Card>
+            <h4 className="font-semibold inline-flex items-center gap-2 mb-3">
+              <Swords className="w-4 h-4 text-amber-300" /> Challenge a friend
+            </h4>
+            {!me?.friends.length ? (
+              <p className="text-sm text-[#8892b0]">
+                Add friends in Settings to challenge them with your score.
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-[#8892b0] mb-3">
+                  Send your score of {score}/{QUIZ.length} on {quiz.subject} —
+                  see if they can beat it.
+                </p>
+                <div className="space-y-2">
+                  {me.friends.map((f) => (
+                    <div
+                      key={f.code}
+                      className="flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/[0.03]"
+                    >
+                      <div>
+                        <div className="font-medium">
+                          {f.name || "Anonymous"}
+                        </div>
+                        <div className="text-xs text-[#8892b0] font-mono">
+                          #{f.code}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => sendChallenge(f.code)}
+                        className="px-4 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-amber-500 to-orange-500 text-white inline-flex items-center gap-1.5"
+                      >
+                        <Swords className="w-3.5 h-3.5" /> Challenge
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {sentMsg && (
+                  <div className="mt-3 text-sm text-emerald-300">{sentMsg}</div>
+                )}
+              </>
+            )}
+          </Card>
         )}
-        <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={() => startQuiz(quiz)}
-            className="px-5 py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#4a84f5] to-[#6366f1] inline-flex items-center gap-2"
-          >
-            <RotateCcw className="w-4 h-4" /> New questions
-          </button>
-          <button
-            onClick={() => {
-              setQuizId(null);
-              setQuestions(null);
-              setLoadErr(null);
-            }}
-            className="px-5 py-3 rounded-xl text-white text-sm font-medium border border-white/15 bg-white/[0.04] hover:bg-white/[0.08]"
-          >
-            ← Choose another test
-          </button>
-        </div>
-      </Card>
+      </div>
     );
+  }
 
   return (
     <Card>
@@ -935,34 +1103,111 @@ function Stats() {
 }
 
 /* ---------------- Overview ---------------- */
+const TILE_GRADIENTS: Record<ViewKey, string> = {
+  overview: "from-slate-500/20 to-slate-700/20",
+  ai: "from-blue-500/25 to-indigo-600/25",
+  language: "from-pink-500/25 to-fuchsia-600/25",
+  test: "from-amber-500/25 to-orange-600/25",
+  notes: "from-emerald-500/25 to-teal-600/25",
+  flashcards: "from-violet-500/25 to-purple-600/25",
+  plan: "from-cyan-500/25 to-sky-600/25",
+  stats: "from-rose-500/25 to-pink-600/25",
+  challenges: "from-orange-500/25 to-red-600/25",
+  codes: "from-yellow-500/25 to-amber-600/25",
+  settings: "from-slate-400/25 to-slate-600/25",
+};
+
 function Overview({ go }: { go: (k: ViewKey) => void }) {
   const { user } = useUser();
+  const [role] = useRole();
+  const [tier] = useTier();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    fetch("/api/challenges", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : { challenges: [] }))
+      .then((d: { challenges?: IncomingChallenge[] }) =>
+        setPendingCount(
+          (d.challenges || []).filter((c) => c.status === "pending").length,
+        ),
+      )
+      .catch(() => {});
+  }, []);
+
   const tiles = NAV.filter((n) => n.key !== "overview");
+
   return (
     <div>
-      <div className="mb-8">
-        <h2 className="font-serif text-4xl tracking-tight">
-          Welcome back
-          {user?.firstName ? `, ${user.firstName}` : ""} 👋
-        </h2>
-        <p className="text-[#8892b0] mt-2">
-          Pick a tool below to keep your study going.
-        </p>
+      <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] p-8 mb-8">
+        <div
+          className="absolute inset-0 -z-10"
+          style={{
+            background:
+              "radial-gradient(ellipse 60% 80% at 0% 0%, rgba(74,132,245,0.18), transparent 60%), radial-gradient(ellipse 60% 80% at 100% 100%, rgba(236,72,153,0.12), transparent 60%)",
+          }}
+        />
+        <div className="flex items-start justify-between flex-wrap gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
+                  role === "teacher"
+                    ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                    : "border-[#4a84f5]/40 bg-[#4a84f5]/10 text-[#7ba8ff]"
+                }`}
+              >
+                {role === "teacher" ? "Teacher" : "Student"}
+              </span>
+              <span className="text-xs font-medium px-2.5 py-1 rounded-full border border-white/10 bg-white/[0.04] text-[#cbd2e0] inline-flex items-center gap-1">
+                <Crown className="w-3 h-3" /> {TIER_LABELS[tier]}
+              </span>
+            </div>
+            <h2 className="font-serif text-4xl tracking-tight">
+              Welcome back
+              {user?.firstName ? `, ${user.firstName}` : ""} 👋
+            </h2>
+            <p className="text-[#8892b0] mt-2 max-w-md">
+              {role === "teacher"
+                ? "Generate quizzes, plan lessons and craft explanations to share with your class."
+                : "Keep your streak alive — pick a tool below to dive back in."}
+            </p>
+          </div>
+          {pendingCount > 0 && (
+            <button
+              onClick={() => go("challenges")}
+              className="px-5 py-3 rounded-2xl text-white text-sm font-medium bg-gradient-to-r from-amber-500 to-orange-500 inline-flex items-center gap-2 shadow-[0_8px_24px_rgba(251,146,60,0.25)]"
+            >
+              <Swords className="w-4 h-4" />
+              {pendingCount} pending challenge{pendingCount === 1 ? "" : "s"}
+            </button>
+          )}
+        </div>
       </div>
+
       <Stats />
+
       <h3 className="font-serif text-2xl mt-12 mb-4">Tools</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {tiles.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => go(key)}
-            className="text-left rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 hover:border-white/[0.15] hover:bg-white/[0.05] transition"
+            className="group text-left rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 hover:border-white/[0.18] hover:bg-white/[0.05] transition relative overflow-hidden"
           >
-            <div className="w-10 h-10 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center mb-4">
-              <Icon className="w-5 h-5 text-[#7ba8ff]" />
+            <div
+              className={`absolute -right-8 -top-8 w-32 h-32 rounded-full bg-gradient-to-br ${TILE_GRADIENTS[key]} blur-2xl opacity-60 group-hover:opacity-100 transition`}
+            />
+            <div className="relative">
+              <div
+                className={`w-11 h-11 rounded-xl bg-gradient-to-br ${TILE_GRADIENTS[key]} border border-white/10 flex items-center justify-center mb-4`}
+              >
+                <Icon className="w-5 h-5 text-white" />
+              </div>
+              <div className="font-semibold">{label}</div>
+              <div className="text-xs text-[#8892b0] mt-1 group-hover:text-[#7ba8ff] transition">
+                Open →
+              </div>
             </div>
-            <div className="font-semibold">{label}</div>
-            <div className="text-xs text-[#8892b0] mt-1">Open →</div>
           </button>
         ))}
       </div>
@@ -1128,6 +1373,131 @@ Ask one short follow-up question in ${lang} to keep the conversation going. Keep
           <Send className="w-4 h-4" /> Send
         </button>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Challenges ---------------- */
+type IncomingChallenge = {
+  id: string;
+  subject: string;
+  yearLevel: string;
+  score: number;
+  total: number;
+  status: "pending" | "beaten" | "failed";
+  responderScore?: number;
+  createdAt: number;
+  from: { name: string | null; code: string };
+};
+
+function Challenges({ go }: { go: (k: ViewKey) => void }) {
+  const [list, setList] = useState<IncomingChallenge[] | null>(null);
+
+  const refresh = () => {
+    fetch("/api/challenges", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : { challenges: [] }))
+      .then((d) => setList(d.challenges as IncomingChallenge[]))
+      .catch(() => setList([]));
+  };
+  useEffect(refresh, []);
+
+  const accept = (c: IncomingChallenge) => {
+    sessionStorage.setItem(
+      "edumind:pendingChallenge",
+      JSON.stringify({
+        id: c.id,
+        subject: c.subject,
+        yearLevel: c.yearLevel,
+        scoreToBeat: c.score,
+        total: c.total,
+        fromName: c.from.name || "Anonymous",
+      } satisfies PendingChallenge),
+    );
+    go("test");
+  };
+
+  const dismiss = async (id: string) => {
+    await fetch(`/api/challenges/${id}/dismiss`, {
+      method: "POST",
+      credentials: "include",
+    });
+    refresh();
+  };
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <div>
+        <h2 className="font-serif text-3xl mb-1 inline-flex items-center gap-3">
+          <Swords className="w-7 h-7 text-amber-300" /> Challenges
+        </h2>
+        <p className="text-[#8892b0] text-sm">
+          Quiz challenges sent to you by friends. Beat their score to win!
+        </p>
+      </div>
+
+      {list === null && (
+        <Card>
+          <p className="text-sm text-[#8892b0]">Loading…</p>
+        </Card>
+      )}
+
+      {list && list.length === 0 && (
+        <Card>
+          <p className="text-sm text-[#8892b0]">
+            No challenges yet. Finish a quiz and challenge a friend to get
+            things started.
+          </p>
+        </Card>
+      )}
+
+      {list?.map((c) => (
+        <Card key={c.id}>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="font-semibold text-lg">
+                {c.from.name || "A friend"} challenged you
+              </div>
+              <div className="text-sm text-[#8892b0] mt-1">
+                {c.subject} · {c.yearLevel} · {c.total} questions
+              </div>
+              <div className="text-sm mt-2">
+                Score to beat:{" "}
+                <span className="text-amber-300 font-semibold">
+                  {c.score} / {c.total}
+                </span>
+              </div>
+              {c.status !== "pending" && (
+                <div
+                  className={`mt-2 inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                    c.status === "beaten"
+                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                      : "bg-rose-500/15 text-rose-300 border border-rose-500/30"
+                  }`}
+                >
+                  {c.status === "beaten"
+                    ? `🏆 You beat them with ${c.responderScore}`
+                    : `Your score: ${c.responderScore} — try again!`}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => accept(c)}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-amber-500 to-orange-500 text-white inline-flex items-center gap-1.5"
+              >
+                <Swords className="w-4 h-4" />{" "}
+                {c.status === "pending" ? "Accept" : "Try again"}
+              </button>
+              <button
+                onClick={() => dismiss(c.id)}
+                className="px-3 py-2 rounded-lg text-xs border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] inline-flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" /> Dismiss
+              </button>
+            </div>
+          </div>
+        </Card>
+      ))}
     </div>
   );
 }
@@ -1559,6 +1929,25 @@ function Codes({ go }: { go: (k: ViewKey) => void }) {
 export default function Dashboard({ onExit }: { onExit: () => void }) {
   const [view, setView] = useState<ViewKey>("overview");
   const [role, setRole] = useRole();
+  const [tier] = useTier();
+  const [challengeCount, setChallengeCount] = useState(0);
+
+  useEffect(() => {
+    const load = () => {
+      fetch("/api/challenges", { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : { challenges: [] }))
+        .then((d: { challenges?: IncomingChallenge[] }) =>
+          setChallengeCount(
+            (d.challenges || []).filter((c) => c.status === "pending").length,
+          ),
+        )
+        .catch(() => {});
+    };
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, [view]);
+
   if (!role) return <RolePicker onPick={setRole} />;
 
   const Body = () => {
@@ -1583,6 +1972,8 @@ export default function Dashboard({ onExit }: { onExit: () => void }) {
         return <Settings go={setView} />;
       case "codes":
         return <Codes go={setView} />;
+      case "challenges":
+        return <Challenges go={setView} />;
     }
   };
 
@@ -1615,24 +2006,41 @@ export default function Dashboard({ onExit }: { onExit: () => void }) {
             </span>
           </button>
           <nav className="space-y-1">
-            {NAV.map(({ key, label, icon: Icon }) => (
-              <button
-                key={key}
-                onClick={() => setView(key)}
-                className={`w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center gap-3 transition ${
-                  view === key
-                    ? "bg-white/[0.08] text-white"
-                    : "text-[#a8b0c8] hover:bg-white/[0.04] hover:text-white"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-              </button>
-            ))}
+            {NAV.map(({ key, label, icon: Icon }) => {
+              const active = view === key;
+              const badge = key === "challenges" && challengeCount > 0 ? challengeCount : null;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setView(key)}
+                  className={`group w-full text-left pl-3 pr-2 py-2.5 rounded-lg text-sm flex items-center gap-3 transition relative ${
+                    active
+                      ? "bg-gradient-to-r from-[#4a84f5]/15 to-transparent text-white"
+                      : "text-[#a8b0c8] hover:bg-white/[0.04] hover:text-white"
+                  }`}
+                >
+                  {active && (
+                    <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r bg-gradient-to-b from-[#4a84f5] to-[#6366f1]" />
+                  )}
+                  <Icon className={`w-4 h-4 ${active ? "text-[#7ba8ff]" : ""}`} />
+                  <span className="flex-1">{label}</span>
+                  {badge !== null && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-black min-w-[18px] text-center">
+                      {badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </nav>
           <div className="mt-8 pt-6 border-t border-white/5 px-2 flex items-center gap-3">
             <UserButton />
-            <div className="text-xs text-[#8892b0]">Account</div>
+            <div className="text-xs text-[#8892b0]">
+              <div>Account</div>
+              <div className="text-[10px] text-[#7ba8ff] font-medium">
+                {TIER_LABELS[tier]}
+              </div>
+            </div>
           </div>
         </aside>
 
